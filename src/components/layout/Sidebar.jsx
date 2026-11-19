@@ -1,12 +1,12 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { User, Book, Calendar, MessageSquare, Anchor, Power, ShieldCheck } from 'lucide-react';
-import { usePensum } from '../../context/PensumContext';
+import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = ({ isSidebarOpen }) => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { logout, user } = usePensum();
+    const { logout, user } = useAuth();
 
     const handleLogout = () => {
         if (logout) logout();

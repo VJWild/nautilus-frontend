@@ -1,11 +1,16 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useMemo, useEffect, captureOwnerStack } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Anchor, ChevronRight, GraduationCap, CheckCircle,
     Plus, CheckCircle2, User, Book, ChevronDown, ChevronUp,
     Lock, Phone, Calendar, Loader2, Sun, Moon, ArrowLeft
 } from 'lucide-react';
-import { dbMaterias, ROMANOS, CAREERS, SPECIALIZATIONS } from '../../mocks/data';
+
+import {ROMANOS} from '../../mocks/data';
+import nautilusApi from '../../api/nautilusApi';
+import { usePensum } from '../../context/PensumContext';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const FloatingInput = ({ label, name, type = 'text', icon: Icon, value, onChange, required = false }) => (
     <div className="relative mb-5">
@@ -34,37 +39,32 @@ const Onboarding = () => {
     const [collapsedSemesters, setCollapsedSemesters] = useState(new Set());
 
     const navigate = useNavigate();
+    const location = useLocation();
+    const {setSession} = useAuth();
+    const {theme, toggleTheme} = useTheme();
 
-    // Sincronización del Modo Claro / Oscuro
-    const [theme, setTheme] = useState(() => {
-        return localStorage.getItem('miumc_theme') || 'dark';
-    });
+    const {login} = usePensum();
+    const credentials = location.state?.credentials;
+    const catalog = location.state?.catalog;
 
+
+    //Si no viene de auth, lo redirige
     useEffect(() => {
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('miumc_theme', theme);
-    }, [theme]);
+        if(!credentials || !catalog) navigate('/auth')
+    },[])
 
-    const toggleTheme = () => {
-        setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-    };
-
-    const studentCode = sessionStorage.getItem('pending_student_code') || 'INGINF-26327337';
-
-    // Detectar carrera por prefijo del código (ej: INGINF)
-    const detectedCareer = useMemo(() => {
-        const prefix = studentCode.split('-')[0].toUpperCase();
-        return CAREERS.find((c) => c.code === prefix) || CAREERS[0];
-    }, [studentCode]);
+    const studentCode = credentials?.studentCode || '';
+    const detectedCareer = catalog?.career || {name: ''};
+    const mentions = catalog?.mentions || [];
+    const allCareerSubjects = catalog?.subjects || [];
 
     const [onboardingData, setOnboardingData] = useState({
-        fullName: '',
-        age: '',
+        firstName: '',
+        lastName: '',
         birthDate: '',
-        phone: '',
+        phoneNumber: '',
         careerId: detectedCareer.id,
-        mencionId: SPECIALIZATIONS[0].id,
-        mencionName: SPECIALIZATIONS[0].name
+        mentionId: mentions[0]?.id || "",
     });
 
     const handleInputChange = (e) => {
@@ -72,40 +72,37 @@ const Onboarding = () => {
     };
 
     const handleMencionChange = (e) => {
-        const selectedId = parseInt(e.target.value, 10);
-        const selectedSpec = SPECIALIZATIONS.find((s) => s.id === selectedId);
         setOnboardingData({
             ...onboardingData,
-            mencionId: selectedId,
-            mencionName: selectedSpec?.name || SPECIALIZATIONS[0].name
+            mentionId: parseInt(e.target.value, 10),
         });
     };
 
     // Filtrar asignaturas según la mención elegida
     const subjectsForMencion = useMemo(() => {
-        return dbMaterias.filter(
-            (m) => m.mencion === 'Todas' || m.mencion === onboardingData.mencionName
+        return allCareerSubjects.filter(
+            (m) => m.mentionId === null || m.mentionId === onboardingData.mentionId
         );
-    }, [onboardingData.mencionName]);
+    }, [onboardingData.mentionId]);
 
     // Agrupar asignaturas por semestre
     const groupedSubjects = useMemo(() => {
         const groups = {};
         subjectsForMencion.forEach((m) => {
-            if (!groups[m.semestre]) groups[m.semestre] = [];
-            groups[m.semestre].push(m);
+            if (!groups[m.semester]) groups[m.semester] = [];
+            groups[m.semester].push(m);
         });
         return groups;
     }, [subjectsForMencion]);
 
     // Bloquear electivas adicionales si ya se seleccionó una en el mismo semestre
     const isElectiveDisabled = (subject, currentApprovedSet) => {
-        if (subject.tipo !== 'Electiva') return false;
-        if (currentApprovedSet.has(subject.codigo)) return false;
+        if (subject.type !== 'ELECTIVE') return false;
+        if (currentApprovedSet.has(subject.id)) return false;
 
         return subjectsForMencion
-            .filter((s) => s.semestre === subject.semestre && s.tipo === 'Electiva')
-            .some((s) => currentApprovedSet.has(s.codigo));
+            .filter((s) => s.semester === subject.semester && s.type === 'ELECTIVE')
+            .some((s) => currentApprovedSet.has(s.id));
     };
 
     const toggleSemesterCollapse = (sem) => {
@@ -115,31 +112,31 @@ const Onboarding = () => {
         setCollapsedSemesters(newSet);
     };
 
-    const handleFinalize = () => {
+    const handleFinalize = async () => {
         setIsFinalizing(true);
-
-        setTimeout(() => {
-            const profileData = {
-                code: studentCode,
-                name: onboardingData.fullName,
-                age: onboardingData.age,
+        try {
+            const payload = {
+                studentCode: credentials.studentCode,
+                email: credentials.email,
+                password: credentials.password,
+                firstName: onboardingData.firstName.trim(),
+                lastName: onboardingData.lastName.trim(),
                 birthDate: onboardingData.birthDate,
-                phone: onboardingData.phone,
-                career: detectedCareer.name,
-                mencion: onboardingData.mencionName,
-                role: 'cadete'
+                phoneNumber: onboardingData.phoneNumber.trim(),
+                ...(onboardingData.mentionId ? { mentionId: onboardingData.mentionId } : {}),
+                approvedSubjectsIds: Array.from(approvedSubjects),
             };
 
-            sessionStorage.setItem('nautilus_user', JSON.stringify(profileData));
-            localStorage.setItem(
-                'nautilus_approved_subjects',
-                JSON.stringify(Array.from(approvedSubjects))
-            );
-            sessionStorage.removeItem('pending_student_code');
+            const { data } = await nautilusApi.post('/auth/register', payload);
 
-            setIsFinalizing(false);
+            await setSession(data.accessToken)
             navigate('/app');
-        }, 500);
+        } catch (err) {
+            const msg = err.response?.data?.message;
+            alert(Array.isArray(msg) ? msg[0] : msg || 'Error al completar el registro');
+        } finally {
+            setIsFinalizing(false);
+        }
     };
 
     return (
@@ -263,24 +260,23 @@ const Onboarding = () => {
                                 </div>
 
                                 <FloatingInput
-                                    label="Nombre Completo"
-                                    name="fullName"
+                                    label="Nombres"
+                                    name="firstName"
                                     icon={User}
-                                    value={onboardingData.fullName}
+                                    value={onboardingData.firstName}
+                                    onChange={handleInputChange}
+                                    required
+                                />
+                                <FloatingInput
+                                    label="Apellidos"
+                                    name="lastName"
+                                    icon={User}
+                                    value={onboardingData.lastName}
                                     onChange={handleInputChange}
                                     required
                                 />
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <FloatingInput
-                                        label="Edad"
-                                        name="age"
-                                        type="number"
-                                        icon={User}
-                                        value={onboardingData.age}
-                                        onChange={handleInputChange}
-                                        required
-                                    />
                                     <FloatingInput
                                         label="Fecha de Nacimiento"
                                         name="birthDate"
@@ -294,10 +290,10 @@ const Onboarding = () => {
 
                                 <FloatingInput
                                     label="Teléfono Móvil"
-                                    name="phone"
+                                    name="phoneNumber"
                                     type="tel"
                                     icon={Phone}
-                                    value={onboardingData.phone}
+                                    value={onboardingData.phoneNumber}
                                     onChange={handleInputChange}
                                     required
                                 />
@@ -306,7 +302,7 @@ const Onboarding = () => {
                                     <button
                                         type="button"
                                         onClick={() => setStep(2)}
-                                        disabled={!onboardingData.fullName || !onboardingData.age || !onboardingData.phone || !onboardingData.birthDate}
+                                        disabled={!onboardingData.firstName || !onboardingData.lastName || !onboardingData.phoneNumber || !onboardingData.birthDate}
                                         className="apple-btn-primary w-full py-4 rounded-2xl text-sm font-semibold uppercase tracking-wider flex justify-center items-center gap-2 cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
                                     >
                                         <span>Siguiente Paso</span>
@@ -350,18 +346,32 @@ const Onboarding = () => {
                                             Mención de Especialidad
                                         </label>
                                         <div className="relative">
-                                            <select
-                                                name="mencionId"
-                                                value={onboardingData.mencionId}
+                                            {mentions.length > 0 && (
+                                                <select
+                                                name="mentionId"
+                                                value={onboardingData.mentionId}
                                                 onChange={handleMencionChange}
                                                 className="nautilus-input w-full px-4 py-4 rounded-2xl outline-none appearance-none cursor-pointer text-sm"
-                                            >
-                                                {SPECIALIZATIONS.map((s) => (
-                                                    <option key={s.id} value={s.id} className="bg-[#112250] text-[#F5F4F0]">
-                                                        {s.name}
-                                                    </option>
-                                                ))}
-                                            </select>
+                                                >
+                                                    {mentions.map(m => (
+                                                        <option key={m.id} value={m.id} className="bg-[#112250] text-[#F5F4F0]">
+                                                            {m.name}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                            {mentions.length === 0 && (
+                                                <select
+                                                name="mentionId"
+                                                value={onboardingData.mentionId}
+                                                onChange={handleMencionChange}
+                                                className="nautilus-input w-full px-4 py-4 rounded-2xl outline-none appearance-none cursor-pointer text-sm"
+                                                disabled
+                                                >
+                                                    <option value="">Carrera sin menciones.</option>
+                                                </select>
+                                            )}
+                                            
                                             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 theme-text-secondary pointer-events-none" size={18} />
                                         </div>
                                     </div>
@@ -413,7 +423,7 @@ const Onboarding = () => {
                                     {Object.entries(groupedSubjects).map(([sem, subjects]) => {
                                         const numSem = parseInt(sem, 10);
                                         const isCollapsed = collapsedSemesters.has(numSem);
-                                        const allSelected = subjects.every((m) => approvedSubjects.has(m.codigo));
+                                        const allSelected = subjects.every((m) => approvedSubjects.has(m.id));
 
                                         return (
                                             <div key={sem} className="glass-pill p-4 rounded-2xl space-y-3">
@@ -437,10 +447,10 @@ const Onboarding = () => {
                                                             setApprovedSubjects((prev) => {
                                                                 const next = new Set(prev);
                                                                 if (allSelected) {
-                                                                    subjects.forEach((m) => next.delete(m.codigo));
+                                                                    subjects.forEach((m) => next.delete(m.id));
                                                                 } else {
                                                                     subjects.forEach((m) => {
-                                                                        if (!isElectiveDisabled(m, next)) next.add(m.codigo);
+                                                                        if (!isElectiveDisabled(m, next)) next.add(m.id);
                                                                     });
                                                                 }
                                                                 return next;
@@ -455,18 +465,18 @@ const Onboarding = () => {
                                                 {!isCollapsed && (
                                                     <div className="grid grid-cols-1 gap-2 pt-1">
                                                         {subjects.map((m) => {
-                                                            const isSelected = approvedSubjects.has(m.codigo);
+                                                            const isSelected = approvedSubjects.has(m.id);
                                                             const isBlocked = isElectiveDisabled(m, approvedSubjects);
 
                                                             return (
                                                                 <div
-                                                                    key={m.codigo}
+                                                                    key={m.id}
                                                                     onClick={() => {
                                                                         if (isBlocked) return;
                                                                         setApprovedSubjects((prev) => {
                                                                             const n = new Set(prev);
-                                                                            if (n.has(m.codigo)) n.delete(m.codigo);
-                                                                            else n.add(m.codigo);
+                                                                            if (n.has(m.id)) n.delete(m.id);
+                                                                            else n.add(m.id);
                                                                             return n;
                                                                         });
                                                                     }}
@@ -481,15 +491,15 @@ const Onboarding = () => {
                                                                     <div>
                                                                         <div className="flex items-center gap-2 mb-0.5">
                                                                             <span className="text-[10px] theme-text-secondary uppercase tracking-wider">
-                                                                                {m.codigo} • {m.uc} UC
+                                                                                {m.code} • {m.credits} UC
                                                                             </span>
-                                                                            {m.tipo === 'Electiva' && (
+                                                                            {m.type === 'ELECTIVE' && (
                                                                                 <span className="glass-pill text-[9px] theme-text-accent px-2 py-0.5 rounded uppercase">
                                                                                     Electiva
                                                                                 </span>
                                                                             )}
                                                                         </div>
-                                                                        <p className="text-sm theme-text-primary">{m.nombre}</p>
+                                                                        <p className="text-sm theme-text-primary">{m.name}</p>
                                                                     </div>
 
                                                                     <div

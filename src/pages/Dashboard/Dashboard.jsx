@@ -5,7 +5,6 @@ import {
     Book, TrendingUp, ChevronRight, MapPin, GraduationCap
 } from 'lucide-react';
 import { usePensum } from '../../context/PensumContext';
-import { USER } from '../../mocks/data';
 
 const Dashboard = () => {
     const {
@@ -13,7 +12,9 @@ const Dashboard = () => {
         ucAprobadas,
         materiasAprobadas,
         materiasInscritas,
-        totalesCarrera
+        totalesCarrera,
+        loading,
+        indiceAcademico
     } = usePensum();
 
     const TOTAL_UC_CARRERA = totalesCarrera?.uc || 225;
@@ -41,7 +42,13 @@ const Dashboard = () => {
         return 'Cada gran travesía comienza con un paso. ¡Mucho éxito en este nuevo inicio, Cadete! ⚓';
     };
 
-    const userData = user || USER;
+    if (loading || !user) {
+    return (
+        <div className="min-h-[60vh] flex items-center justify-center theme-text-secondary text-sm">
+            Cargando expediente académico...
+        </div>
+    );
+}
 
     return (
         <div className="max-w-6xl mx-auto space-y-6 pb-10">
@@ -71,8 +78,8 @@ const Dashboard = () => {
 
                     <h2 className="text-2xl md:text-4xl font-semibold theme-text-primary tracking-tight">
                         {esIngeniero
-                            ? `¡Felicidades, Ingeniero ${userData.name.split(' ')[0]}!`
-                            : `¡Bienvenido a bordo, ${userData.name}!`}
+                            ? `¡Felicidades, Ingeniero ${user.name.split(' ')[0]}!`
+                            : `¡Bienvenido a bordo, ${user.name}!`}
                     </h2>
 
                     <div className="flex flex-wrap items-center gap-3 pt-1">
@@ -83,13 +90,14 @@ const Dashboard = () => {
                                     : 'glass-pill theme-text-accent'
                             }`}
                         >
-                            {userData.code}
+                            {user.code}
                         </span>
                         <span className="text-sm theme-text-secondary">
-                            {userData.career} •{' '}
+                            {user.careerName} {user.mentionName && (
                             <strong className={esIngeniero ? 'text-amber-400' : 'theme-text-primary'}>
-                                {userData.mencion}
+                                • {user.mentionName}
                             </strong>
+                        )}
                         </span>
                     </div>
                 </div>
@@ -271,7 +279,7 @@ const Dashboard = () => {
                         </div>
                         <div>
                             <span className="text-3xl font-semibold theme-text-primary block">
-                                15.5
+                                {indiceAcademico ?? '--'}
                             </span>
                             <p className="text-[11px] theme-text-secondary uppercase tracking-[0.16em] mt-1">
                                 Índice Académico

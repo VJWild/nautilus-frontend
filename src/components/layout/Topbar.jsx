@@ -1,19 +1,13 @@
 import React from 'react';
 import { Menu, Search, Bell, Sun, Moon, ShieldCheck } from 'lucide-react';
-import { usePensum } from '../../context/PensumContext';
-import { USER } from '../../mocks/data';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const Topbar = ({ isSidebarOpen, setIsSidebarOpen }) => {
-    const { user, setUser, theme, toggleTheme } = usePensum();
-    const currentUser = user || USER;
+    const {user} = useAuth();
+    const {theme, toggleTheme } = useTheme();
 
-    const toggleRole = () => {
-        const nextRole = currentUser.role === 'admin' ? 'cadete' : 'admin';
-        const updated = { ...currentUser, role: nextRole };
-        setUser(updated);
-        sessionStorage.setItem('nautilus_user', JSON.stringify(updated));
-    };
-
+ 
     return (
         <header className="h-20 glass-panel border-b border-current/10 flex justify-between items-center px-4 lg:px-8 z-30 shrink-0 select-none">
             <div className="flex items-center gap-4">
@@ -36,16 +30,6 @@ const Topbar = ({ isSidebarOpen, setIsSidebarOpen }) => {
             </div>
 
             <div className="flex items-center gap-2.5 md:gap-4">
-                {/* Selector rápido de Rol (Cadete / Admin) */}
-                <button
-                    onClick={toggleRole}
-                    className="apple-btn-glass px-3.5 py-2.5 rounded-xl flex items-center gap-2 text-xs uppercase tracking-wider cursor-pointer"
-                    title="Cambiar entre vista Cadete y Admin"
-                >
-                    <ShieldCheck size={15} className="theme-text-accent" />
-                    <span className="hidden sm:inline theme-text-primary">{currentUser.role || 'cadete'}</span>
-                </button>
-
                 {/* Conmutador Modo Claro / Modo Oscuro */}
                 <button
                     type="button"
@@ -73,12 +57,12 @@ const Topbar = ({ isSidebarOpen, setIsSidebarOpen }) => {
                 {/* Perfil del Estudiante */}
                 <div className="flex items-center gap-3 border-l border-current/10 pl-3 md:pl-5">
                     <div className="hidden sm:block text-right">
-                        <p className="text-sm theme-text-primary leading-tight">{currentUser.name}</p>
-                        <p className="text-[11px] theme-text-secondary font-normal">{currentUser.code}</p>
+                        <p className="text-sm theme-text-primary leading-tight">{user?.name}</p>
+                        <p className="text-[11px] theme-text-secondary font-normal">{user?.code}</p>
                     </div>
 
                     <div className="apple-card w-10 h-10 rounded-xl flex items-center justify-center theme-text-accent text-xs uppercase">
-                        {currentUser.avatar || 'VJ'}
+                        {user?.avatar}
                     </div>
                 </div>
             </div>

@@ -4,6 +4,9 @@ import {
     Anchor, User, Lock, Mail, ChevronRight, ArrowLeft,
     Info, AlertCircle, Loader2, Sun, Moon
 } from 'lucide-react';
+import nautilusApi from '../../api/nautilusApi';
+import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
 const FloatingInput = ({ label, name, type = 'text', icon: Icon, value, onChange, required = false }) => (
     <div className="relative mb-5">
@@ -26,28 +29,16 @@ const FloatingInput = ({ label, name, type = 'text', icon: Icon, value, onChange
 );
 
 const AuthContainer = () => {
+    const navigate = useNavigate();
+    const {setSession} = useAuth();
+    const {theme, toggleTheme} = useTheme();
+
     const [isLogin, setIsLogin] = useState(true);
     const [showLoginContent, setShowLoginContent] = useState(true);
     const [showPassInfo, setShowPassInfo] = useState(false);
     const [isAnimating, setIsAnimating] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-
-    const navigate = useNavigate();
-
-    // Sincronización del Modo Claro / Oscuro
-    const [theme, setTheme] = useState(() => {
-        return localStorage.getItem('miumc_theme') || 'dark';
-    });
-
-    useEffect(() => {
-        document.documentElement.setAttribute('data-theme', theme);
-        localStorage.setItem('miumc_theme', theme);
-    }, [theme]);
-
-    const toggleTheme = () => {
-        setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-    };
-
+    const [error, setError] = useState('');
     const [formData, setFormData] = useState({
         studentCode: '',
         password: '',
@@ -56,12 +47,14 @@ const AuthContainer = () => {
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
+        setError('');
     };
 
     const toggleAuthMode = () => {
         if (isAnimating) return;
         setIsAnimating(true);
         setIsLogin(!isLogin);
+        setError('');
 
         setTimeout(() => {
             setShowLoginContent(!showLoginContent);
@@ -72,23 +65,52 @@ const AuthContainer = () => {
         }, 560);
     };
 
-    const handleAction = (e) => {
+    const handleAction = async (e) => {
         e.preventDefault();
         setIsLoading(true);
 
-        setTimeout(() => {
-            setIsLoading(false);
-            if (showLoginContent) {
-                sessionStorage.setItem('nautilus_user', JSON.stringify({
-                    code: formData.studentCode || 'INGINF-26327337',
-                    name: 'Víctor J. González'
-                }));
-                navigate('/app');
+        const cleanCode = formData.studentCode.trim().toUpperCase();
+        try {
+            if(showLoginContent){
+                const { data } = await nautilusApi.post('/auth/login',{
+                    studentCode: cleanCode, 
+                    password: formData.password
+                })
+                
+
+                await setSession(data.accessToken)
+                navigate('/app')
             } else {
-                sessionStorage.setItem('pending_student_code', formData.studentCode);
-                navigate('/onboarding');
+                if(!(/^[A-Z]{3,6}-\d{6,10}$/.test(cleanCode)) ){
+                    setError('Formato de código estudiantil incorrecto')
+                    return
+                }
+
+                if(!formData.password.length >= 6){
+                    setError('La contraseña debe tener más de 6 carácteres')
+                    return
+                }
+
+                const careerCode = cleanCode.split('-')[0]
+                const {data: catalog} = await nautilusApi.get(`/careers/${careerCode}/catalog`);
+                navigate('/onboarding', {
+                    state: {
+                        credentials: {
+                            studentCode: cleanCode,
+                            email: formData.email.trim(),
+                            password: formData.password,
+                        },
+                        catalog,
+                    },
+                });
             }
-        }, 450);
+        }
+        catch (err) {
+            const backendMsg = err.response?.data?.message;
+            setError(Array.isArray(backendMsg) ? backendMsg[0] : backendMsg || 'Error al conectar con el servidor');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     return (
@@ -236,6 +258,13 @@ const AuthContainer = () => {
                                             ¿Olvidaste tu contraseña?
                                         </button>
                                     </div>
+                                        
+                                    {error && (
+                                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                                            <AlertCircle size={16} className="shrink-0" />
+                                            <span>{error}</span>
+                                        </div>
+                                    )}
 
                                     <button
                                         type="submit"
@@ -305,6 +334,13 @@ const AuthContainer = () => {
                                             required
                                         />
                                     </div>
+
+                                    {error && (
+                                        <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                                            <AlertCircle size={16} className="shrink-0" />
+                                            <span>{error}</span>
+                                        </div>
+                                    )}
 
                                     <button
                                         type="submit"
